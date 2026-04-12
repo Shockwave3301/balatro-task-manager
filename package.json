@@ -1,0 +1,12 @@
+{
+  "name": "chip-todo",
+  "version": "1.0.0",
+  "description": "A Balatro-inspired todo app with casino chip rewards",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.0"
+  }
+}

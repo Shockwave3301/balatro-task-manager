@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chip Todo</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <!-- Video background -->
+  <video class="bg-video" autoplay loop muted playsinline>
+    <source src="assets/background.webm" type="video/webm">
+  </video>
+  <div class="bg-overlay"></div>
+
+  <button class="music-btn" id="music-btn" title="Play music">&#9654;</button>
+  <div class="debug-bar">
+    <button class="debug-btn" id="debug-btn" title="Add 2000 chips">+2000</button>
+    <button class="debug-btn" id="debug-jimbo-btn" title="Toggle Jimbo 100%">Jimbo</button>
+  </div>
+
+  <div class="container">
+    <!-- Chip Counter -->
+    <div class="chip-counter-section">
+      <div class="chip-counter-box" id="chip-counter-box">
+        <div class="chip-counter-label">Chip Balance</div>
+        <div class="chip-counter-value-row">
+          <div class="chip-counter-value" id="chip-balance">0</div>
+          <div class="multiplier-badge" id="multiplier-badge">x1.0</div>
+        </div>
+      </div>
+      <button class="cashout-btn" id="cashout-btn" disabled>Cash Out</button>
+    </div>
+
+    <!-- Add Task Bar -->
+    <div class="add-task-bar">
+      <input type="text" id="task-input" placeholder="What needs doing?" maxlength="200" autocomplete="off">
+      <button class="chip-difficulty-btn" id="chip-difficulty-btn" data-chips="200">
+        <img src="assets/blue-chip.png" alt="200" class="chip-icon">
+      </button>
+    </div>
+
+    <!-- Task List -->
+    <div class="task-list" id="task-list"></div>
+  </div>
+
+  <!-- Side Jimbo -->
+  <div class="jimbo-side hidden" id="jimbo-side">
+    <div class="jimbo-side-bubble" id="jimbo-side-bubble"></div>
+    <img src="assets/jimbo.png" alt="Jimbo" class="jimbo-side-img" id="jimbo-side-img">
+  </div>
+
+  <!-- Jimbo Overlay -->
+  <div class="jimbo-overlay hidden" id="jimbo-overlay">
+    <div class="jimbo-scene">
+      <div class="jimbo-dialogue" id="jimbo-dialogue"></div>
+      <img src="assets/jimbo.png" alt="Jimbo" class="jimbo-img" id="jimbo-img">
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

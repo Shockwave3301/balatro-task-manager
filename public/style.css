@@ -1,0 +1,572 @@
+/* ===== Reset & Base ===== */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: "Segoe UI", system-ui, sans-serif;
+  color: #e8e8e8;
+  min-height: 100vh;
+  overflow-x: hidden;
+  background: #0a0a1a;
+}
+
+/* ===== Video Background ===== */
+.bg-video {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  z-index: -2;
+}
+
+.bg-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: -1;
+}
+
+/* ===== Music Button ===== */
+.music-btn {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 10;
+  width: 40px;
+  height: 40px;
+  border: none;
+  border-radius: 10px;
+  background: rgba(22, 33, 62, 0.8);
+  color: #a0a0b0;
+  font-size: 16px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.music-btn:hover {
+  background: rgba(22, 33, 62, 0.95);
+  color: #f0c040;
+}
+
+.music-btn.playing {
+  color: #f0c040;
+}
+
+.debug-bar {
+  position: fixed;
+  top: 16px;
+  right: 64px;
+  z-index: 10;
+  display: flex;
+  gap: 6px;
+}
+
+.debug-btn {
+  height: 40px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 10px;
+  background: rgba(22, 33, 62, 0.8);
+  color: #a0a0b0;
+  font-family: "Pixelify Sans", cursive;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.debug-btn:hover {
+  background: rgba(22, 33, 62, 0.95);
+  color: #f0c040;
+}
+
+.debug-btn:active {
+  transform: scale(0.95);
+}
+
+.debug-btn.active {
+  color: #f0c040;
+  background: rgba(22, 33, 62, 0.95);
+}
+
+/* ===== Container ===== */
+.container {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 40px 20px 60px;
+}
+
+/* ===== Chip Counter Section ===== */
+.chip-counter-section {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  margin-bottom: 32px;
+}
+
+.chip-counter-box {
+  background: #16213e;
+  border-radius: 16px 16px 0 0;
+  padding: 24px 32px;
+  text-align: center;
+  box-shadow: 0 4px 24px rgba(240, 192, 64, 0.12), 0 0 0 1px rgba(240, 192, 64, 0.08);
+  transition: box-shadow 0.3s;
+}
+
+.chip-counter-label {
+  font-family: "Pixelify Sans", cursive;
+  font-size: 14px;
+  color: #a0a0b0;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  margin-bottom: 4px;
+}
+
+.chip-counter-value-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+.chip-counter-value {
+  font-family: "Pixelify Sans", cursive;
+  font-size: 56px;
+  font-weight: 700;
+  color: #f0c040;
+  text-shadow: 0 0 20px rgba(240, 192, 64, 0.4);
+  line-height: 1.1;
+}
+
+.multiplier-badge {
+  font-family: "Pixelify Sans", cursive;
+  font-size: 22px;
+  font-weight: 700;
+  color: #ff6b6b;
+  background: rgba(255, 107, 107, 0.12);
+  padding: 4px 10px;
+  border-radius: 8px;
+  text-shadow: 0 0 12px rgba(255, 107, 107, 0.3);
+  transition: transform 0.2s, color 0.2s;
+}
+
+.multiplier-badge.bump {
+  animation: mult-bump 0.3s ease-out;
+}
+
+@keyframes mult-bump {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.3); }
+  100% { transform: scale(1); }
+}
+
+.cashout-btn {
+  font-family: "Pixelify Sans", cursive;
+  font-size: 16px;
+  font-weight: 700;
+  padding: 12px 28px;
+  border: none;
+  border-radius: 0 0 16px 16px;
+  background: linear-gradient(180deg, #f0c040, #d4a020);
+  color: #1a1a2e;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(240, 192, 64, 0.3);
+  transition: opacity 0.2s, transform 0.15s;
+  white-space: nowrap;
+}
+
+.cashout-btn:hover:not(:disabled) {
+  box-shadow: 0 6px 20px rgba(240, 192, 64, 0.4);
+}
+
+.cashout-btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.cashout-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* ===== Add Task Bar ===== */
+.add-task-bar {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  background: #16213e;
+  padding: 12px 16px;
+  border-radius: 14px;
+  margin-bottom: 24px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+}
+
+#task-input {
+  flex: 1;
+  padding: 12px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  background: #0f3460;
+  color: #e8e8e8;
+  font-family: "Pixelify Sans", cursive;
+  font-size: 15px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+#task-input::placeholder {
+  font-family: "Pixelify Sans", cursive;
+  color: #6a6a80;
+}
+
+#task-input:focus {
+  border-color: rgba(240, 192, 64, 0.4);
+}
+
+.chip-difficulty-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  background: #0f3460;
+  cursor: pointer;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+
+.chip-difficulty-btn:hover {
+  border-color: rgba(240, 192, 64, 0.4);
+}
+
+.chip-difficulty-btn .chip-icon {
+  width: 24px;
+  height: 24px;
+}
+
+/* ===== Task List ===== */
+.task-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.task-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #16213e;
+  padding: 14px 16px;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  transition: transform 0.2s, opacity 0.3s, background 0.2s;
+}
+
+.task-card.dragging {
+  opacity: 0.5;
+  transform: scale(0.98);
+}
+
+.task-card.drag-over {
+  box-shadow: 0 0 0 2px #f0c040, 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+.drag-handle {
+  cursor: grab;
+  color: #4a4a60;
+  font-size: 18px;
+  user-select: none;
+  padding: 0 4px;
+  line-height: 1;
+}
+
+.drag-handle:active {
+  cursor: grabbing;
+}
+
+.task-title {
+  flex: 1;
+  font-family: "Pixelify Sans", cursive;
+  font-size: 15px;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.task-chip-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  cursor: pointer;
+  transition: background 0.15s;
+  border: none;
+  flex-shrink: 0;
+}
+
+.task-chip-badge:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.task-chip-badge .chip-icon {
+  width: 22px;
+  height: 22px;
+}
+
+.task-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  transition: transform 0.1s, opacity 0.15s;
+  flex-shrink: 0;
+  opacity: 0.85;
+}
+
+.task-btn:hover {
+  opacity: 1;
+}
+
+.task-btn:active {
+  transform: scale(0.9);
+}
+
+.btn-icon {
+  width: 32px;
+  height: 32px;
+  display: block;
+}
+
+/* ===== Empty State ===== */
+.empty-state {
+  text-align: center;
+  padding: 48px 20px;
+  color: #6a6a80;
+  font-size: 16px;
+  font-family: "Pixelify Sans", cursive;
+}
+
+/* ===== Animations ===== */
+@keyframes shake-light {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-2px); }
+  40% { transform: translateX(2px); }
+  60% { transform: translateX(-3px); }
+  80% { transform: translateX(2px); }
+}
+
+@keyframes shake-strong {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-4px); }
+  40% { transform: translateX(4px); }
+  60% { transform: translateX(-5px); }
+  80% { transform: translateX(3px); }
+}
+
+@keyframes gold-flash {
+  0% { box-shadow: 0 4px 24px rgba(240, 192, 64, 0.12), 0 0 0 1px rgba(240, 192, 64, 0.08); }
+  50% { box-shadow: 0 0 40px rgba(240, 192, 64, 0.6), 0 0 0 3px rgba(240, 192, 64, 0.4); }
+  100% { box-shadow: 0 4px 24px rgba(240, 192, 64, 0.12), 0 0 0 1px rgba(240, 192, 64, 0.08); }
+}
+
+.shake-light {
+  animation: shake-light 0.3s ease-in-out;
+}
+
+.shake-strong {
+  animation: shake-strong 0.2s ease-in-out;
+}
+
+.gold-flash {
+  animation: gold-flash 0.6s ease-in-out;
+}
+
+.task-card.completing {
+  transform: scale(1.03);
+  background: rgba(42, 111, 42, 0.3);
+  transition: transform 0.15s, background 0.15s;
+}
+
+.task-card.fade-out {
+  opacity: 0;
+  transform: translateX(40px) scale(0.95);
+  transition: opacity 0.3s, transform 0.3s;
+}
+
+/* ===== Flying Chip ===== */
+.flying-chip {
+  position: fixed;
+  z-index: 50;
+  pointer-events: none;
+  width: 40px;
+  height: 40px;
+  transition: all 0.6s cubic-bezier(0.2, 0.8, 0.2, 1);
+  filter: drop-shadow(0 0 8px rgba(240, 192, 64, 0.5));
+}
+
+.flying-chip.landed {
+  opacity: 0;
+  transform: scale(0.3);
+}
+
+/* ===== Side Jimbo ===== */
+.jimbo-side {
+  position: fixed;
+  top: 50%;
+  right: 0;
+  z-index: 90;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transform: translate(100%, -50%);
+  transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.jimbo-side.visible {
+  transform: translate(-20px, -50%);
+}
+
+.jimbo-side.hidden {
+  transform: translate(100%, -50%);
+}
+
+.jimbo-side-bubble {
+  background: #fff;
+  color: #1a1a2e;
+  font-family: "Pixelify Sans", cursive;
+  font-size: 14px;
+  font-weight: 700;
+  padding: 12px 16px;
+  border-radius: 12px;
+  max-width: 220px;
+  text-align: center;
+  line-height: 1.3;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  position: relative;
+  margin-bottom: -6px;
+  z-index: 1;
+  min-height: 20px;
+}
+
+.jimbo-side-bubble::after {
+  content: "";
+  position: absolute;
+  bottom: -10px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+  border-left: 10px solid transparent;
+  border-right: 10px solid transparent;
+  border-top: 10px solid #fff;
+}
+
+.jimbo-side-img {
+  width: 120px;
+  height: auto;
+  animation: jimbo-sway 2.5s ease-in-out infinite;
+}
+
+.jimbo-side-img.talking {
+  animation: jimbo-sway 2.5s ease-in-out infinite, jimbo-pulse 0.15s ease-in-out;
+}
+
+/* ===== Jimbo Overlay ===== */
+.jimbo-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.6);
+  cursor: pointer;
+  transition: opacity 0.3s;
+}
+
+.jimbo-overlay.hidden {
+  display: none;
+}
+
+.jimbo-scene {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+}
+
+.jimbo-dialogue {
+  background: #fff;
+  color: #1a1a2e;
+  font-family: "Pixelify Sans", cursive;
+  font-size: 18px;
+  font-weight: 700;
+  padding: 20px 28px;
+  border-radius: 14px;
+  max-width: 360px;
+  text-align: center;
+  line-height: 1.4;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  position: relative;
+  margin-bottom: -8px;
+  z-index: 1;
+}
+
+.jimbo-dialogue::after {
+  content: "";
+  position: absolute;
+  bottom: -12px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+  border-left: 14px solid transparent;
+  border-right: 14px solid transparent;
+  border-top: 14px solid #fff;
+}
+
+.jimbo-img {
+  width: 200px;
+  height: auto;
+  animation: jimbo-sway 2.5s ease-in-out infinite;
+}
+
+.jimbo-img.talking {
+  animation: jimbo-sway 2.5s ease-in-out infinite, jimbo-pulse 0.15s ease-in-out;
+}
+
+@keyframes jimbo-sway {
+  0%, 100% { transform: rotate(-3deg); }
+  50% { transform: rotate(3deg); }
+}
+
+@keyframes jimbo-pulse {
+  0%, 100% { scale: 1; }
+  50% { scale: 1.06; }
+}
+
+/* ===== Interaction lock during cashout ===== */
+body.locked .add-task-bar,
+body.locked .task-card,
+body.locked .cashout-btn {
+  pointer-events: none;
+  opacity: 0.5;
+}
