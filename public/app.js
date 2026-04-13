@@ -24,12 +24,15 @@ const taskInput = document.getElementById("task-input");
 const taskListEl = document.getElementById("task-list");
 const chipDifficultyBtn = document.getElementById("chip-difficulty-btn");
 const multiplierBadge = document.getElementById("multiplier-badge");
+const modeToggle = document.getElementById("mode-toggle");
+const modeIcon = document.getElementById("mode-icon");
 
 // ===== State =====
 let currentChipBalance = 0;
 let currentMultiplier = 1;
 let selectedChips = 200;
 let isAnimating = false;
+let isHabitMode = false;
 
 // ===== Chip images map =====
 const chipImages = {
@@ -38,12 +41,36 @@ const chipImages = {
   1000: "assets/gold-chip.png",
 };
 
+// ===== Habit reward curve =====
+const HABIT_REWARDS = {
+  200:  { increment: 50,  ceiling: 200,  milestone: 1500 },
+  500:  { increment: 100, ceiling: 500,  milestone: 2500 },
+  1000: { increment: 150, ceiling: 1000, milestone: 5000 },
+};
+
+function habitReward(chips, streak) {
+  if (streak <= 1) return 0;
+  const r = HABIT_REWARDS[chips];
+  if (streak === 61) return r.milestone;
+  if (streak > 61) return 100;
+  return Math.min(100 + (streak - 2) * r.increment, r.ceiling);
+}
+
 // ===== Chip difficulty button (cycles on click) =====
 chipDifficultyBtn.addEventListener("click", () => {
   const cycle = { 200: 500, 500: 1000, 1000: 200 };
   selectedChips = cycle[selectedChips];
   chipDifficultyBtn.dataset.chips = selectedChips;
   chipDifficultyBtn.querySelector(".chip-icon").src = chipImages[selectedChips];
+  playSound(sounds.buttonPressed);
+});
+
+// ===== Mode toggle (task / habit) =====
+modeToggle.addEventListener("click", () => {
+  isHabitMode = !isHabitMode;
+  modeIcon.src = isHabitMode ? "assets/habit.png" : "assets/task.png";
+  modeIcon.alt = isHabitMode ? "Habit" : "Task";
+  taskInput.placeholder = isHabitMode ? "New habit..." : "New task...";
   playSound(sounds.buttonPressed);
 });
 
@@ -56,49 +83,106 @@ async function loadTasks() {
   chipBalanceEl.textContent = currentChipBalance.toLocaleString();
   multiplierBadge.textContent = `x ${currentMultiplier.toFixed(1)}`;
   cashoutBtn.disabled = currentChipBalance === 0;
-  renderTasks(data.tasks);
+  renderList(data.tasks, data.habits, data.listOrder);
 }
 
-function renderTasks(tasks) {
-  if (tasks.length === 0) {
+function renderList(tasks, habits, listOrder) {
+  const taskMap = new Map(tasks.map((t) => [t.id, { ...t, _type: "task" }]));
+  const habitMap = new Map(habits.map((h) => [h.id, { ...h, _type: "habit" }]));
+
+  // Build ordered list: listOrder first, then any unordered items
+  const ordered = [];
+  const seen = new Set();
+  for (const id of listOrder) {
+    const item = taskMap.get(id) || habitMap.get(id);
+    if (item) {
+      ordered.push(item);
+      seen.add(id);
+    }
+  }
+  for (const t of tasks) {
+    if (!seen.has(t.id)) ordered.push({ ...t, _type: "task" });
+  }
+  for (const h of habits) {
+    if (!seen.has(h.id)) ordered.push({ ...h, _type: "habit" });
+  }
+
+  if (ordered.length === 0) {
     taskListEl.innerHTML =
       '<div class="empty-state">No tasks. Add one above.</div>';
     return;
   }
 
   taskListEl.innerHTML = "";
-  tasks.forEach((task) => {
+  const todayStr = new Date().toISOString().slice(0, 10);
+
+  ordered.forEach((item) => {
     const card = document.createElement("div");
-    card.className = "task-card";
-    card.dataset.id = task.id;
+    card.dataset.id = item.id;
     card.draggable = true;
 
-    card.innerHTML = `
-      <span class="drag-handle">⠿</span>
-      <button class="task-chip-badge" data-chips="${task.chips}" title="Click to cycle chip value">
-        <img src="${chipImages[task.chips]}" alt="${task.chips}" class="chip-icon">
-      </button>
-      <span class="task-title">${escapeHtml(task.title)}</span>
-      <button class="task-btn complete-btn" title="Complete"><img src="assets/complete.png" alt="Complete" class="btn-icon"></button>
-      <button class="task-btn delete-btn" title="Delete"><img src="assets/delete.png" alt="Delete" class="btn-icon"></button>
-    `;
+    if (item._type === "habit") {
+      const checkedToday = item.lastChecked === todayStr;
+      card.className =
+        "task-card habit-card" + (checkedToday ? " checked-today" : "");
 
-    // Chip badge cycling
-    card.querySelector(".task-chip-badge").addEventListener("click", () => {
-      cycleChipValue(task.id, task.chips, card);
-    });
+      const streakClass = item.streak > 0 ? "" : " no-streak";
+      const reward = habitReward(item.chips, item.streak);
+      const r = HABIT_REWARDS[item.chips];
+      const ceiling = item.streak > 61 ? 100 : r.ceiling;
+      const rewardLabel = item.streak <= 1 ? "0/" + r.ceiling : reward + "/" + ceiling;
+      card.innerHTML = `
+        <span class="drag-handle">⠿</span>
+        <button class="task-chip-badge" data-chips="${item.chips}" title="Click to cycle chip value">
+          <img src="${chipImages[item.chips]}" alt="${item.chips}" class="chip-icon">
+        </button>
+        <span class="task-title">${escapeHtml(item.title)}</span>
+        <span class="habit-reward-label">${rewardLabel}</span>
+        <span class="streak-badge${streakClass}">${item.streak}d</span>
+        <button class="task-btn complete-btn" title="${checkedToday ? "Done today" : "Check off"}"><img src="assets/complete.png" alt="Complete" class="btn-icon"></button>
+        <button class="task-btn delete-btn" title="Delete"><img src="assets/delete.png" alt="Delete" class="btn-icon"></button>
+      `;
 
-    // Complete
-    card.querySelector(".complete-btn").addEventListener("click", () => {
-      completeTask(task.id, task.chips, card);
-    });
+      card.querySelector(".task-chip-badge").addEventListener("click", () => {
+        cycleHabitChipValue(item.id, item.chips, card);
+      });
 
-    // Delete
-    card.querySelector(".delete-btn").addEventListener("click", () => {
-      deleteTask(task.id, card);
-    });
+      if (!checkedToday) {
+        card.querySelector(".complete-btn").addEventListener("click", () => {
+          checkHabit(item.id, item.chips, card);
+        });
+      }
 
-    // Drag events
+      card.querySelector(".delete-btn").addEventListener("click", () => {
+        deleteHabit(item.id, card);
+      });
+    } else {
+      card.className = "task-card";
+
+      card.innerHTML = `
+        <span class="drag-handle">⠿</span>
+        <button class="task-chip-badge" data-chips="${item.chips}" title="Click to cycle chip value">
+          <img src="${chipImages[item.chips]}" alt="${item.chips}" class="chip-icon">
+        </button>
+        <span class="task-title">${escapeHtml(item.title)}</span>
+        <button class="task-btn complete-btn" title="Complete"><img src="assets/complete.png" alt="Complete" class="btn-icon"></button>
+        <button class="task-btn delete-btn" title="Delete"><img src="assets/delete.png" alt="Delete" class="btn-icon"></button>
+      `;
+
+      card.querySelector(".task-chip-badge").addEventListener("click", () => {
+        cycleChipValue(item.id, item.chips, card);
+      });
+
+      card.querySelector(".complete-btn").addEventListener("click", () => {
+        completeTask(item.id, item.chips, card);
+      });
+
+      card.querySelector(".delete-btn").addEventListener("click", () => {
+        deleteTask(item.id, card);
+      });
+    }
+
+    // Drag events (shared)
     card.addEventListener("dragstart", onDragStart);
     card.addEventListener("dragend", onDragEnd);
     card.addEventListener("dragover", onDragOver);
@@ -126,7 +210,8 @@ async function addTask() {
   if (!title) return;
 
   playSound(sounds.buttonPressed);
-  const res = await fetch("/api/tasks", {
+  const endpoint = isHabitMode ? "/api/habits" : "/api/tasks";
+  const res = await fetch(endpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ title, chips: selectedChips }),
@@ -246,6 +331,136 @@ async function deleteTask(taskId, card) {
   await sleep(300);
 
   const res = await fetch(`/api/tasks/${taskId}`, { method: "DELETE" });
+  if (res.ok) {
+    card.remove();
+    if (taskListEl.children.length === 0) {
+      taskListEl.innerHTML =
+        '<div class="empty-state">No tasks. Add one above.</div>';
+    }
+    maybeSideJimbo("delete");
+  } else {
+    loadTasks();
+  }
+}
+
+// ===== Habit: cycle chip value =====
+async function cycleHabitChipValue(habitId, currentChips, card) {
+  const cycle = { 200: 500, 500: 1000, 1000: 200 };
+  const newChips = cycle[currentChips];
+
+  playSound(sounds.buttonPressed);
+
+  const res = await fetch(`/api/habits/${habitId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ chips: newChips }),
+  });
+
+  if (res.ok) {
+    const badge = card.querySelector(".task-chip-badge");
+    badge.dataset.chips = newChips;
+    badge.innerHTML = `<img src="${chipImages[newChips]}" alt="${newChips}" class="chip-icon">`;
+    badge.onclick = () => cycleHabitChipValue(habitId, newChips, card);
+  }
+}
+
+// ===== Habit: daily check-off =====
+async function checkHabit(habitId, chips, card) {
+  if (isAnimating) return;
+  isAnimating = true;
+
+  // Capture positions
+  const chipBadge = card.querySelector(".task-chip-badge");
+  const badgeRect = chipBadge.getBoundingClientRect();
+  const counterRect = chipCounterBox.getBoundingClientRect();
+
+  playSound(sounds.taskCompleted);
+  card.classList.add("completing");
+
+  await sleep(200);
+  card.classList.remove("completing");
+
+  const res = await fetch(`/api/habits/${habitId}/check`, { method: "POST" });
+  if (!res.ok) {
+    isAnimating = false;
+    loadTasks();
+    return;
+  }
+
+  const data = await res.json();
+
+  // Mark as checked visually
+  card.classList.add("checked-today");
+  const completeBtn = card.querySelector(".complete-btn");
+  completeBtn.style.opacity = "0.3";
+  completeBtn.style.pointerEvents = "none";
+
+  // Update streak badge
+  const streakBadge = card.querySelector(".streak-badge");
+  streakBadge.textContent = `${data.habit.streak}d`;
+  streakBadge.classList.remove("no-streak");
+
+  if (data.earned === 0 && data.habit.streak <= 1) {
+    showSideJimbo(
+      "No chips on day one, pal. Gotta prove you can stick with it first.",
+    );
+  } else if (data.milestone) {
+    showSideJimbo(
+      "60 days! That's a real habit now. Here's a fat bonus — you earned it. From here on, it's just maintenance chips.",
+    );
+  } else if (data.habit.streak > 61) {
+    showSideJimbo(
+      "Habit's locked in. Base chips only now — go chase something new.",
+    );
+  }
+
+  if (data.earned > 0) {
+    // Fly chip
+    const flyingChip = document.createElement("img");
+    flyingChip.src = chipImages[chips];
+    flyingChip.className = "flying-chip";
+    flyingChip.style.left = badgeRect.left + badgeRect.width / 2 - 20 + "px";
+    flyingChip.style.top = badgeRect.top + badgeRect.height / 2 - 20 + "px";
+    document.body.appendChild(flyingChip);
+
+    if (chips === 200) playSound(sounds.chipsAdded200);
+    else if (chips === 500) playSound(sounds.chipsAdded500);
+    else if (chips === 1000) playSound(sounds.chipsAdded1000);
+
+    await sleep(20);
+    flyingChip.style.left =
+      counterRect.left + counterRect.width / 2 - 20 + "px";
+    flyingChip.style.top = counterRect.top + counterRect.height / 2 - 20 + "px";
+
+    await sleep(600);
+    flyingChip.classList.add("landed");
+    flyingChip.addEventListener("transitionend", () => flyingChip.remove());
+
+    await animateCounterUp(currentChipBalance, data.chipBalance);
+    currentChipBalance = data.chipBalance;
+    currentMultiplier = data.multiplier;
+    cashoutBtn.disabled = currentChipBalance === 0;
+
+    multiplierBadge.textContent = `x ${currentMultiplier.toFixed(1)}`;
+    multiplierBadge.classList.remove("bump");
+    void multiplierBadge.offsetWidth;
+    multiplierBadge.classList.add("bump");
+  }
+
+  isAnimating = false;
+  maybeSideJimbo("complete");
+}
+
+// ===== Habit: delete =====
+async function deleteHabit(habitId, card) {
+  if (isAnimating) return;
+
+  playSound(sounds.taskDeleted);
+  card.classList.add("fade-out");
+
+  await sleep(300);
+
+  const res = await fetch(`/api/habits/${habitId}`, { method: "DELETE" });
   if (res.ok) {
     card.remove();
     if (taskListEl.children.length === 0) {
@@ -427,13 +642,13 @@ function onDrop(e) {
   }
 
   // Persist new order
-  const taskIds = [...taskListEl.querySelectorAll(".task-card")].map(
+  const listOrder = [...taskListEl.querySelectorAll(".task-card")].map(
     (c) => c.dataset.id,
   );
   fetch("/api/tasks/reorder", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ taskIds }),
+    body: JSON.stringify({ listOrder }),
   });
 }
 
@@ -602,7 +817,14 @@ async function showSideJimbo(line) {
 
   // Auto-dismiss after 3 seconds
   sideJimboDismissTimer = setTimeout(dismissSideJimbo, 3000);
+
+  // Return a promise that resolves when Jimbo is fully dismissed
+  return new Promise((resolve) => {
+    sideJimboDismissResolve = resolve;
+  });
 }
+
+let sideJimboDismissResolve = null;
 
 function dismissSideJimbo() {
   clearTimeout(sideJimboDismissTimer);
@@ -610,6 +832,10 @@ function dismissSideJimbo() {
   setTimeout(() => {
     jimboSide.classList.add("hidden");
     sideJimboActive = false;
+    if (sideJimboDismissResolve) {
+      sideJimboDismissResolve();
+      sideJimboDismissResolve = null;
+    }
   }, 400);
 }
 
@@ -651,6 +877,25 @@ debugJimboBtn.addEventListener("click", () => {
   debugJimboBtn.classList.toggle("active", sideJimboAlways);
   playSound(sounds.buttonPressed);
 });
+
+// ===== Habit help button =====
+document
+  .getElementById("habit-help-btn")
+  .addEventListener("click", async () => {
+    playSound(sounds.buttonPressed);
+    await showSideJimbo(
+      "Habits start at 100 chips and grow each day you keep the streak. " +
+        "Easy habits grow slow, hard ones grow fast — but all cap at their chip tier. " +
+        "Hit 60 days and you get a fat milestone bonus. " +
+        "After that, the habit's integrated — just base chips from there. " +
+        "Miss a day? Streak resets and you lose chips. Don't miss a day.",
+    );
+    await sleep(1000);
+    await showSideJimbo(
+      "Oh, and habits increase your multiplier, but are not affected by it! " +
+        "So it's a solid strategy to get them out of your way first to get that mult for the rest of the day!",
+    );
+  });
 
 // ===== Init =====
 loadTasks();

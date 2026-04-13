@@ -18,6 +18,7 @@
 
   <button class="music-btn" id="music-btn" title="Play music">&#9654;</button>
   <div class="debug-bar">
+    <button class="debug-btn" id="habit-help-btn">How do habits work?</button>
     <button class="debug-btn" id="debug-btn" title="Add 2000 chips">+2000</button>
     <button class="debug-btn" id="debug-jimbo-btn" title="Toggle Jimbo 100%">Jimbo</button>
   </div>
@@ -37,7 +38,10 @@
 
     <!-- Add Task Bar -->
     <div class="add-task-bar">
-      <input type="text" id="task-input" placeholder="What needs doing?" maxlength="200" autocomplete="off">
+      <button class="mode-toggle" id="mode-toggle" title="Toggle task/habit mode">
+        <img src="assets/task.png" alt="Task" class="mode-toggle-icon" id="mode-icon">
+      </button>
+      <input type="text" id="task-input" placeholder="New task..." maxlength="200" autocomplete="off">
       <button class="chip-difficulty-btn" id="chip-difficulty-btn" data-chips="200">
         <img src="assets/blue-chip.png" alt="200" class="chip-icon">
       </button>
