@@ -1,3 +1,193 @@
+// ===== Local storage layer (replaces server.js) =====
+const STORAGE_KEY = "chipTodoDb";
+
+const MULT_BONUS = { 200: 0.1, 500: 0.3, 1000: 0.5 };
+
+function todayStr() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function yesterdayStr() {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
+
+function uuid() {
+  if (crypto.randomUUID) return crypto.randomUUID();
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
+function readDb() {
+  const raw = localStorage.getItem(STORAGE_KEY);
+  let db;
+  if (!raw) {
+    db = {
+      tasks: [],
+      habits: [],
+      listOrder: [],
+      chipBalance: 0,
+      earnings: [],
+      cashouts: [],
+      multiplier: { value: 1, date: todayStr() },
+    };
+    writeDb(db);
+    return db;
+  }
+  db = JSON.parse(raw);
+  if (!db.habits) db.habits = [];
+  if (!db.listOrder) db.listOrder = [];
+  if (!db.multiplier || db.multiplier.date !== todayStr()) {
+    db.multiplier = { value: 1, date: todayStr() };
+  }
+  // Reset streaks and apply penalties for missed habits
+  const yest = yesterdayStr();
+  const t = todayStr();
+  let changed = false;
+  for (const h of db.habits) {
+    if (h.lastChecked && h.lastChecked !== t && h.lastChecked !== yest && h.streak > 0) {
+      h.streak = 0;
+      db.chipBalance -= h.chips;
+      changed = true;
+    }
+  }
+  if (changed) writeDb(db);
+  return db;
+}
+
+function writeDb(data) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+}
+
+const api = {
+  getAll() {
+    const db = readDb();
+    return {
+      tasks: db.tasks,
+      habits: db.habits,
+      listOrder: db.listOrder,
+      chipBalance: db.chipBalance,
+      multiplier: db.multiplier.value,
+    };
+  },
+  createTask(title, chips) {
+    const db = readDb();
+    const task = { id: uuid(), title: title.trim().slice(0, 200), chips };
+    db.tasks.push(task);
+    db.listOrder.push(task.id);
+    writeDb(db);
+    return task;
+  },
+  completeTask(id) {
+    const db = readDb();
+    const idx = db.tasks.findIndex((t) => t.id === id);
+    if (idx === -1) return null;
+    const task = db.tasks.splice(idx, 1)[0];
+    db.listOrder = db.listOrder.filter((x) => x !== task.id);
+    const earned = Math.round(task.chips * db.multiplier.value);
+    db.chipBalance += earned;
+    db.multiplier.value =
+      Math.round((db.multiplier.value + MULT_BONUS[task.chips]) * 10) / 10;
+    db.earnings.push({ chips: earned, date: todayStr() });
+    writeDb(db);
+    return { task, earned, chipBalance: db.chipBalance, multiplier: db.multiplier.value };
+  },
+  deleteTask(id) {
+    const db = readDb();
+    const idx = db.tasks.findIndex((t) => t.id === id);
+    if (idx === -1) return false;
+    const removed = db.tasks.splice(idx, 1)[0];
+    db.listOrder = db.listOrder.filter((x) => x !== removed.id);
+    writeDb(db);
+    return true;
+  },
+  updateTaskChips(id, chips) {
+    const db = readDb();
+    const task = db.tasks.find((t) => t.id === id);
+    if (!task) return null;
+    task.chips = chips;
+    writeDb(db);
+    return task;
+  },
+  reorder(listOrder) {
+    const db = readDb();
+    db.listOrder = listOrder;
+    writeDb(db);
+  },
+  createHabit(title, chips) {
+    const db = readDb();
+    const habit = {
+      id: uuid(),
+      title: title.trim().slice(0, 200),
+      chips,
+      streak: 0,
+      lastChecked: null,
+      createdDate: todayStr(),
+    };
+    db.habits.push(habit);
+    db.listOrder.push(habit.id);
+    writeDb(db);
+    return habit;
+  },
+  checkHabit(id) {
+    const db = readDb();
+    const habit = db.habits.find((h) => h.id === id);
+    if (!habit) return null;
+    const t = todayStr();
+    if (habit.lastChecked === t) return null;
+    const yest = yesterdayStr();
+    habit.streak = habit.lastChecked === yest ? habit.streak + 1 : 1;
+    habit.lastChecked = t;
+    const baseReward = habitReward(habit.chips, habit.streak);
+    const earned = Math.round(baseReward * db.multiplier.value);
+    const milestone = habit.streak === 61;
+    if (earned > 0) {
+      db.chipBalance += earned;
+      db.multiplier.value =
+        Math.round((db.multiplier.value + MULT_BONUS[habit.chips]) * 10) / 10;
+      db.earnings.push({ chips: earned, date: t });
+    }
+    writeDb(db);
+    return { habit, earned, milestone, chipBalance: db.chipBalance, multiplier: db.multiplier.value };
+  },
+  deleteHabit(id) {
+    const db = readDb();
+    const idx = db.habits.findIndex((h) => h.id === id);
+    if (idx === -1) return false;
+    const removed = db.habits.splice(idx, 1)[0];
+    db.listOrder = db.listOrder.filter((x) => x !== removed.id);
+    writeDb(db);
+    return true;
+  },
+  updateHabitChips(id, chips) {
+    const db = readDb();
+    const habit = db.habits.find((h) => h.id === id);
+    if (!habit) return null;
+    habit.chips = chips;
+    writeDb(db);
+    return habit;
+  },
+  cashout() {
+    const db = readDb();
+    if (db.chipBalance === 0) return null;
+    const cashout = { id: uuid(), amount: db.chipBalance, date: new Date().toISOString() };
+    db.cashouts.push(cashout);
+    db.chipBalance = 0;
+    writeDb(db);
+    return cashout;
+  },
+  debugAddChips() {
+    const db = readDb();
+    db.chipBalance += 2000;
+    writeDb(db);
+    return { chipBalance: db.chipBalance };
+  },
+};
+
 // ===== Sound preloading =====
 const sounds = {
   taskCompleted: new Audio("sounds/task-completed.ogg"),
@@ -74,10 +264,9 @@ modeToggle.addEventListener("click", () => {
   playSound(sounds.buttonPressed);
 });
 
-// ===== Fetch and render =====
-async function loadTasks() {
-  const res = await fetch("/api/tasks");
-  const data = await res.json();
+// ===== Load and render =====
+function loadTasks() {
+  const data = api.getAll();
   currentChipBalance = data.chipBalance;
   currentMultiplier = data.multiplier;
   chipBalanceEl.textContent = currentChipBalance.toLocaleString();
@@ -114,7 +303,7 @@ function renderList(tasks, habits, listOrder) {
   }
 
   taskListEl.innerHTML = "";
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStrVal = todayStr();
 
   ordered.forEach((item) => {
     const card = document.createElement("div");
@@ -122,7 +311,7 @@ function renderList(tasks, habits, listOrder) {
     card.draggable = true;
 
     if (item._type === "habit") {
-      const checkedToday = item.lastChecked === todayStr;
+      const checkedToday = item.lastChecked === todayStrVal;
       card.className =
         "task-card habit-card" + (checkedToday ? " checked-today" : "");
 
@@ -205,43 +394,31 @@ taskInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter") addTask();
 });
 
-async function addTask() {
+function addTask() {
   const title = taskInput.value.trim();
   if (!title) return;
 
   playSound(sounds.buttonPressed);
-  const endpoint = isHabitMode ? "/api/habits" : "/api/tasks";
-  const res = await fetch(endpoint, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ title, chips: selectedChips }),
-  });
+  if (isHabitMode) api.createHabit(title, selectedChips);
+  else api.createTask(title, selectedChips);
 
-  if (res.ok) {
-    taskInput.value = "";
-    loadTasks();
-    maybeSideJimbo("create");
-  }
+  taskInput.value = "";
+  loadTasks();
+  maybeSideJimbo("create");
 }
 
 // ===== Cycle chip value =====
-async function cycleChipValue(taskId, currentChips, card) {
+function cycleChipValue(taskId, currentChips, card) {
   const cycle = { 200: 500, 500: 1000, 1000: 200 };
   const newChips = cycle[currentChips];
 
   playSound(sounds.buttonPressed);
 
-  const res = await fetch(`/api/tasks/${taskId}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ chips: newChips }),
-  });
-
-  if (res.ok) {
+  const updated = api.updateTaskChips(taskId, newChips);
+  if (updated) {
     const badge = card.querySelector(".task-chip-badge");
     badge.dataset.chips = newChips;
     badge.innerHTML = `<img src="${chipImages[newChips]}" alt="${newChips}" class="chip-icon">`;
-    // Update the click handler with new chip value
     badge.onclick = () => cycleChipValue(taskId, newChips, card);
   }
 }
@@ -266,15 +443,14 @@ async function completeTask(taskId, chips, card) {
 
   await sleep(300);
 
-  // Step 2: Call API
-  const res = await fetch(`/api/tasks/${taskId}/complete`, { method: "POST" });
-  if (!res.ok) {
+  // Step 2: Apply mutation
+  const data = api.completeTask(taskId);
+  if (!data) {
     isAnimating = false;
     loadTasks();
     return;
   }
 
-  const data = await res.json();
   card.remove();
 
   // Show empty state if no tasks left
@@ -330,8 +506,7 @@ async function deleteTask(taskId, card) {
 
   await sleep(300);
 
-  const res = await fetch(`/api/tasks/${taskId}`, { method: "DELETE" });
-  if (res.ok) {
+  if (api.deleteTask(taskId)) {
     card.remove();
     if (taskListEl.children.length === 0) {
       taskListEl.innerHTML =
@@ -344,19 +519,14 @@ async function deleteTask(taskId, card) {
 }
 
 // ===== Habit: cycle chip value =====
-async function cycleHabitChipValue(habitId, currentChips, card) {
+function cycleHabitChipValue(habitId, currentChips, card) {
   const cycle = { 200: 500, 500: 1000, 1000: 200 };
   const newChips = cycle[currentChips];
 
   playSound(sounds.buttonPressed);
 
-  const res = await fetch(`/api/habits/${habitId}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ chips: newChips }),
-  });
-
-  if (res.ok) {
+  const updated = api.updateHabitChips(habitId, newChips);
+  if (updated) {
     const badge = card.querySelector(".task-chip-badge");
     badge.dataset.chips = newChips;
     badge.innerHTML = `<img src="${chipImages[newChips]}" alt="${newChips}" class="chip-icon">`;
@@ -380,14 +550,12 @@ async function checkHabit(habitId, chips, card) {
   await sleep(200);
   card.classList.remove("completing");
 
-  const res = await fetch(`/api/habits/${habitId}/check`, { method: "POST" });
-  if (!res.ok) {
+  const data = api.checkHabit(habitId);
+  if (!data) {
     isAnimating = false;
     loadTasks();
     return;
   }
-
-  const data = await res.json();
 
   // Mark as checked visually
   card.classList.add("checked-today");
@@ -460,8 +628,7 @@ async function deleteHabit(habitId, card) {
 
   await sleep(300);
 
-  const res = await fetch(`/api/habits/${habitId}`, { method: "DELETE" });
-  if (res.ok) {
+  if (api.deleteHabit(habitId)) {
     card.remove();
     if (taskListEl.children.length === 0) {
       taskListEl.innerHTML =
@@ -511,8 +678,8 @@ cashoutBtn.addEventListener("click", async () => {
   isAnimating = true;
   document.body.classList.add("locked");
 
-  const res = await fetch("/api/cashout", { method: "POST" });
-  if (!res.ok) {
+  const cashoutRecord = api.cashout();
+  if (!cashoutRecord) {
     isAnimating = false;
     document.body.classList.remove("locked");
     return;
@@ -645,11 +812,7 @@ function onDrop(e) {
   const listOrder = [...taskListEl.querySelectorAll(".task-card")].map(
     (c) => c.dataset.id,
   );
-  fetch("/api/tasks/reorder", {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ listOrder }),
-  });
+  api.reorder(listOrder);
 }
 
 // ===== Utility =====
@@ -859,15 +1022,12 @@ musicBtn.addEventListener("click", () => {
 });
 
 // ===== Debug: Add chips =====
-document.getElementById("debug-btn").addEventListener("click", async () => {
-  const res = await fetch("/api/debug/add-chips", { method: "POST" });
-  if (res.ok) {
-    const data = await res.json();
-    currentChipBalance = data.chipBalance;
-    chipBalanceEl.textContent = currentChipBalance.toLocaleString();
-    cashoutBtn.disabled = false;
-    playSound(sounds.buttonPressed);
-  }
+document.getElementById("debug-btn").addEventListener("click", () => {
+  const data = api.debugAddChips();
+  currentChipBalance = data.chipBalance;
+  chipBalanceEl.textContent = currentChipBalance.toLocaleString();
+  cashoutBtn.disabled = false;
+  playSound(sounds.buttonPressed);
 });
 
 // ===== Debug: Toggle Jimbo 100% =====
