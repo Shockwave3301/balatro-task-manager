@@ -878,6 +878,28 @@ debugJimboBtn.addEventListener("click", () => {
   playSound(sounds.buttonPressed);
 });
 
+// ===== Task help button =====
+document
+  .getElementById("task-help-btn")
+  .addEventListener("click", async () => {
+    playSound(sounds.buttonPressed);
+    await showSideJimbo(
+      "Create tasks, assign them a chip value — blue is easy, red is medium, gold is hard. " +
+        "Complete a task and the chips are yours.",
+    );
+    await sleep(1000);
+    await showSideJimbo(
+      "Every task you finish today bumps your multiplier. " +
+        "Easy gives +0.1, medium +0.3, hard +0.5. " +
+        "Multiplier resets at midnight, so stack 'em up while you can.",
+    );
+    await sleep(1000);
+    await showSideJimbo(
+      "When you're ready, hit Cash Out to bank your chips. " +
+        "That's when I show up with something to say. Don't keep me waiting.",
+    );
+  });
+
 // ===== Habit help button =====
 document
   .getElementById("habit-help-btn")
