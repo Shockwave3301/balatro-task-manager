@@ -113,6 +113,14 @@ const api = {
     writeDb(db);
     return task;
   },
+  updateTaskTitle(id, title) {
+    const db = readDb();
+    const task = db.tasks.find((t) => t.id === id);
+    if (!task) return null;
+    task.title = title.trim().slice(0, 200);
+    writeDb(db);
+    return task;
+  },
   reorder(listOrder) {
     const db = readDb();
     db.listOrder = listOrder;
@@ -171,6 +179,14 @@ const api = {
     writeDb(db);
     return habit;
   },
+  updateHabitTitle(id, title) {
+    const db = readDb();
+    const habit = db.habits.find((h) => h.id === id);
+    if (!habit) return null;
+    habit.title = title.trim().slice(0, 200);
+    writeDb(db);
+    return habit;
+  },
   cashout() {
     const db = readDb();
     if (db.chipBalance === 0) return null;
@@ -216,6 +232,9 @@ const chipDifficultyBtn = document.getElementById("chip-difficulty-btn");
 const multiplierBadge = document.getElementById("multiplier-badge");
 const modeToggle = document.getElementById("mode-toggle");
 const modeIcon = document.getElementById("mode-icon");
+const undoToast = document.getElementById("undo-toast");
+const undoToastMessage = document.getElementById("undo-toast-message");
+const undoToastBtn = document.getElementById("undo-toast-btn");
 
 // ===== State =====
 let currentChipBalance = 0;
@@ -336,6 +355,11 @@ function renderList(tasks, habits, listOrder) {
         cycleHabitChipValue(item.id, item.chips, card);
       });
 
+      card.querySelector(".task-title").addEventListener("dblclick", (e) => {
+        e.stopPropagation();
+        startEditTitle(item, card);
+      });
+
       if (!checkedToday) {
         card.querySelector(".complete-btn").addEventListener("click", () => {
           checkHabit(item.id, item.chips, card);
@@ -360,6 +384,11 @@ function renderList(tasks, habits, listOrder) {
 
       card.querySelector(".task-chip-badge").addEventListener("click", () => {
         cycleChipValue(item.id, item.chips, card);
+      });
+
+      card.querySelector(".task-title").addEventListener("dblclick", (e) => {
+        e.stopPropagation();
+        startEditTitle(item, card);
       });
 
       card.querySelector(".complete-btn").addEventListener("click", () => {
@@ -387,6 +416,64 @@ function escapeHtml(text) {
   const div = document.createElement("div");
   div.textContent = text;
   return div.innerHTML;
+}
+
+function startEditTitle(item, card) {
+  const titleEl = card.querySelector(".task-title");
+  if (!titleEl || card.querySelector(".task-title-input")) return;
+
+  const originalTitle = item.title;
+  const input = document.createElement("input");
+  input.type = "text";
+  input.value = originalTitle;
+  input.maxLength = 200;
+  input.className = "task-title-input";
+
+  titleEl.replaceWith(input);
+  const wasDraggable = card.draggable;
+  card.draggable = false;
+
+  input.focus();
+  input.setSelectionRange(originalTitle.length, originalTitle.length);
+
+  let done = false;
+  const finish = (save) => {
+    if (done) return;
+    done = true;
+
+    const trimmed = input.value.trim();
+    let finalTitle = originalTitle;
+    if (save && trimmed && trimmed !== originalTitle) {
+      const capped = trimmed.slice(0, 200);
+      if (item._type === "habit") api.updateHabitTitle(item.id, capped);
+      else api.updateTaskTitle(item.id, capped);
+      item.title = capped;
+      finalTitle = capped;
+    }
+
+    const span = document.createElement("span");
+    span.className = "task-title";
+    span.textContent = finalTitle;
+    span.addEventListener("dblclick", (e) => {
+      e.stopPropagation();
+      startEditTitle(item, card);
+    });
+    input.replaceWith(span);
+    card.draggable = wasDraggable;
+  };
+
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      finish(true);
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      finish(false);
+    }
+  });
+  input.addEventListener("blur", () => finish(true));
+  input.addEventListener("mousedown", (e) => e.stopPropagation());
+  input.addEventListener("dragstart", (e) => e.preventDefault());
 }
 
 // ===== Add task =====
@@ -423,15 +510,10 @@ function cycleChipValue(taskId, currentChips, card) {
   }
 }
 
-// ===== Complete task (choreographed) =====
+// ===== Complete task (choreographed, with undo window) =====
 async function completeTask(taskId, chips, card) {
   if (isAnimating) return;
   isAnimating = true;
-
-  // Capture positions before any DOM changes
-  const chipBadge = card.querySelector(".task-chip-badge");
-  const badgeRect = chipBadge.getBoundingClientRect();
-  const counterRect = chipCounterBox.getBoundingClientRect();
 
   // Step 1: play sound, flash card
   playSound(sounds.taskCompleted);
@@ -439,83 +521,106 @@ async function completeTask(taskId, chips, card) {
 
   await sleep(200);
   card.classList.remove("completing");
-  card.classList.add("fade-out");
+  card.classList.add("pending-action");
 
-  await sleep(300);
+  showUndoToast(
+    "Task completed",
+    async () => {
+      // Commit: run the full animation + DB write
+      const chipBadge = card.querySelector(".task-chip-badge");
+      const badgeRect = chipBadge.getBoundingClientRect();
+      const counterRect = chipCounterBox.getBoundingClientRect();
 
-  // Step 2: Apply mutation
-  const data = api.completeTask(taskId);
-  if (!data) {
-    isAnimating = false;
-    loadTasks();
-    return;
-  }
+      card.classList.remove("pending-action");
+      card.classList.add("fade-out");
+      await sleep(300);
 
-  card.remove();
+      const data = api.completeTask(taskId);
+      if (!data) {
+        isAnimating = false;
+        loadTasks();
+        return;
+      }
 
-  // Show empty state if no tasks left
-  if (taskListEl.children.length === 0) {
-    taskListEl.innerHTML =
-      '<div class="empty-state">No tasks. Add one above.</div>';
-  }
+      card.remove();
+      if (taskListEl.children.length === 0) {
+        taskListEl.innerHTML =
+          '<div class="empty-state">No tasks. Add one above.</div>';
+      }
 
-  // Step 3: Fly chip from task to counter
-  const flyingChip = document.createElement("img");
-  flyingChip.src = chipImages[chips];
-  flyingChip.className = "flying-chip";
-  flyingChip.style.left = badgeRect.left + badgeRect.width / 2 - 20 + "px";
-  flyingChip.style.top = badgeRect.top + badgeRect.height / 2 - 20 + "px";
-  document.body.appendChild(flyingChip);
+      // Fly chip from task to counter
+      const flyingChip = document.createElement("img");
+      flyingChip.src = chipImages[chips];
+      flyingChip.className = "flying-chip";
+      flyingChip.style.left = badgeRect.left + badgeRect.width / 2 - 20 + "px";
+      flyingChip.style.top = badgeRect.top + badgeRect.height / 2 - 20 + "px";
+      document.body.appendChild(flyingChip);
 
-  // Play chip sound at launch
-  if (chips === 200) playSound(sounds.chipsAdded200);
-  else if (chips === 500) playSound(sounds.chipsAdded500);
-  else if (chips === 1000) playSound(sounds.chipsAdded1000);
+      if (chips === 200) playSound(sounds.chipsAdded200);
+      else if (chips === 500) playSound(sounds.chipsAdded500);
+      else if (chips === 1000) playSound(sounds.chipsAdded1000);
 
-  // Trigger fly to counter center
-  await sleep(20);
-  flyingChip.style.left = counterRect.left + counterRect.width / 2 - 20 + "px";
-  flyingChip.style.top = counterRect.top + counterRect.height / 2 - 20 + "px";
+      await sleep(20);
+      flyingChip.style.left = counterRect.left + counterRect.width / 2 - 20 + "px";
+      flyingChip.style.top = counterRect.top + counterRect.height / 2 - 20 + "px";
 
-  await sleep(600);
-  flyingChip.classList.add("landed");
-  flyingChip.addEventListener("transitionend", () => flyingChip.remove());
+      await sleep(600);
+      flyingChip.classList.add("landed");
+      flyingChip.addEventListener("transitionend", () => flyingChip.remove());
 
-  // Step 4: Animate counter up and update multiplier
-  await animateCounterUp(currentChipBalance, data.chipBalance);
-  currentChipBalance = data.chipBalance;
-  currentMultiplier = data.multiplier;
-  cashoutBtn.disabled = currentChipBalance === 0;
+      await animateCounterUp(currentChipBalance, data.chipBalance);
+      currentChipBalance = data.chipBalance;
+      currentMultiplier = data.multiplier;
+      cashoutBtn.disabled = currentChipBalance === 0;
 
-  // Bump multiplier display
-  multiplierBadge.textContent = `x ${currentMultiplier.toFixed(1)}`;
-  multiplierBadge.classList.remove("bump");
-  void multiplierBadge.offsetWidth;
-  multiplierBadge.classList.add("bump");
+      multiplierBadge.textContent = `x ${currentMultiplier.toFixed(1)}`;
+      multiplierBadge.classList.remove("bump");
+      void multiplierBadge.offsetWidth;
+      multiplierBadge.classList.add("bump");
 
-  isAnimating = false;
-  maybeSideJimbo("complete");
+      isAnimating = false;
+      maybeSideJimbo("complete");
+    },
+    () => {
+      // Undo: leave the task in place, no DB change
+      card.classList.remove("pending-action");
+      isAnimating = false;
+    },
+  );
 }
 
-// ===== Delete task =====
+// ===== Delete task (with undo window) =====
 async function deleteTask(taskId, card) {
   if (isAnimating) return;
+  isAnimating = true;
 
   playSound(sounds.taskDeleted);
-  card.classList.add("fade-out");
+  card.classList.add("pending-action");
 
-  await sleep(300);
+  showUndoToast(
+    "Task deleted",
+    async () => {
+      card.classList.remove("pending-action");
+      card.classList.add("fade-out");
+      await sleep(300);
 
-  if (api.deleteTask(taskId)) {
-    card.remove();
-    if (taskListEl.children.length === 0) {
-      taskListEl.innerHTML =
-        '<div class="empty-state">No tasks. Add one above.</div>';
-    }
-    maybeSideJimbo("delete");
-  } else {
-    loadTasks();
-  }
+      if (api.deleteTask(taskId)) {
+        card.remove();
+        if (taskListEl.children.length === 0) {
+          taskListEl.innerHTML =
+            '<div class="empty-state">No tasks. Add one above.</div>';
+        }
+        maybeSideJimbo("delete");
+      } else {
+        loadTasks();
+      }
+      isAnimating = false;
+    },
+    () => {
+      card.classList.remove("pending-action");
+      isAnimating = false;
+    },
+  );
 }
 
 // ===== Habit: cycle chip value =====
@@ -534,110 +639,131 @@ function cycleHabitChipValue(habitId, currentChips, card) {
   }
 }
 
-// ===== Habit: daily check-off =====
+// ===== Habit: daily check-off (with undo window) =====
 async function checkHabit(habitId, chips, card) {
   if (isAnimating) return;
   isAnimating = true;
-
-  // Capture positions
-  const chipBadge = card.querySelector(".task-chip-badge");
-  const badgeRect = chipBadge.getBoundingClientRect();
-  const counterRect = chipCounterBox.getBoundingClientRect();
 
   playSound(sounds.taskCompleted);
   card.classList.add("completing");
 
   await sleep(200);
   card.classList.remove("completing");
+  card.classList.add("pending-action");
 
-  const data = api.checkHabit(habitId);
-  if (!data) {
-    isAnimating = false;
-    loadTasks();
-    return;
-  }
+  showUndoToast(
+    "Habit checked",
+    async () => {
+      const chipBadge = card.querySelector(".task-chip-badge");
+      const badgeRect = chipBadge.getBoundingClientRect();
+      const counterRect = chipCounterBox.getBoundingClientRect();
 
-  // Mark as checked visually
-  card.classList.add("checked-today");
-  const completeBtn = card.querySelector(".complete-btn");
-  completeBtn.style.opacity = "0.3";
-  completeBtn.style.pointerEvents = "none";
+      card.classList.remove("pending-action");
 
-  // Update streak badge
-  const streakBadge = card.querySelector(".streak-badge");
-  streakBadge.textContent = `${data.habit.streak}d`;
-  streakBadge.classList.remove("no-streak");
+      const data = api.checkHabit(habitId);
+      if (!data) {
+        isAnimating = false;
+        loadTasks();
+        return;
+      }
 
-  if (data.earned === 0 && data.habit.streak <= 1) {
-    showSideJimbo(
-      "No chips on day one, pal. Gotta prove you can stick with it first.",
-    );
-  } else if (data.milestone) {
-    showSideJimbo(
-      "60 days! That's a real habit now. Here's a fat bonus — you earned it. From here on, it's just maintenance chips.",
-    );
-  } else if (data.habit.streak > 61) {
-    showSideJimbo(
-      "Habit's locked in. Base chips only now — go chase something new.",
-    );
-  }
+      card.classList.add("checked-today");
+      const completeBtn = card.querySelector(".complete-btn");
+      completeBtn.style.opacity = "0.3";
+      completeBtn.style.pointerEvents = "none";
 
-  if (data.earned > 0) {
-    // Fly chip
-    const flyingChip = document.createElement("img");
-    flyingChip.src = chipImages[chips];
-    flyingChip.className = "flying-chip";
-    flyingChip.style.left = badgeRect.left + badgeRect.width / 2 - 20 + "px";
-    flyingChip.style.top = badgeRect.top + badgeRect.height / 2 - 20 + "px";
-    document.body.appendChild(flyingChip);
+      const streakBadge = card.querySelector(".streak-badge");
+      streakBadge.textContent = `${data.habit.streak}d`;
+      streakBadge.classList.remove("no-streak");
 
-    if (chips === 200) playSound(sounds.chipsAdded200);
-    else if (chips === 500) playSound(sounds.chipsAdded500);
-    else if (chips === 1000) playSound(sounds.chipsAdded1000);
+      if (data.earned === 0 && data.habit.streak <= 1) {
+        showSideJimbo(
+          "No chips on day one, pal. Gotta prove you can stick with it first.",
+        );
+      } else if (data.milestone) {
+        showSideJimbo(
+          "60 days! That's a real habit now. Here's a fat bonus — you earned it. From here on, it's just maintenance chips.",
+        );
+      } else if (data.habit.streak > 61) {
+        showSideJimbo(
+          "Habit's locked in. Base chips only now — go chase something new.",
+        );
+      }
 
-    await sleep(20);
-    flyingChip.style.left =
-      counterRect.left + counterRect.width / 2 - 20 + "px";
-    flyingChip.style.top = counterRect.top + counterRect.height / 2 - 20 + "px";
+      if (data.earned > 0) {
+        const flyingChip = document.createElement("img");
+        flyingChip.src = chipImages[chips];
+        flyingChip.className = "flying-chip";
+        flyingChip.style.left = badgeRect.left + badgeRect.width / 2 - 20 + "px";
+        flyingChip.style.top = badgeRect.top + badgeRect.height / 2 - 20 + "px";
+        document.body.appendChild(flyingChip);
 
-    await sleep(600);
-    flyingChip.classList.add("landed");
-    flyingChip.addEventListener("transitionend", () => flyingChip.remove());
+        if (chips === 200) playSound(sounds.chipsAdded200);
+        else if (chips === 500) playSound(sounds.chipsAdded500);
+        else if (chips === 1000) playSound(sounds.chipsAdded1000);
 
-    await animateCounterUp(currentChipBalance, data.chipBalance);
-    currentChipBalance = data.chipBalance;
-    currentMultiplier = data.multiplier;
-    cashoutBtn.disabled = currentChipBalance === 0;
+        await sleep(20);
+        flyingChip.style.left =
+          counterRect.left + counterRect.width / 2 - 20 + "px";
+        flyingChip.style.top = counterRect.top + counterRect.height / 2 - 20 + "px";
 
-    multiplierBadge.textContent = `x ${currentMultiplier.toFixed(1)}`;
-    multiplierBadge.classList.remove("bump");
-    void multiplierBadge.offsetWidth;
-    multiplierBadge.classList.add("bump");
-  }
+        await sleep(600);
+        flyingChip.classList.add("landed");
+        flyingChip.addEventListener("transitionend", () => flyingChip.remove());
 
-  isAnimating = false;
-  maybeSideJimbo("complete");
+        await animateCounterUp(currentChipBalance, data.chipBalance);
+        currentChipBalance = data.chipBalance;
+        currentMultiplier = data.multiplier;
+        cashoutBtn.disabled = currentChipBalance === 0;
+
+        multiplierBadge.textContent = `x ${currentMultiplier.toFixed(1)}`;
+        multiplierBadge.classList.remove("bump");
+        void multiplierBadge.offsetWidth;
+        multiplierBadge.classList.add("bump");
+      }
+
+      isAnimating = false;
+      maybeSideJimbo("complete");
+    },
+    () => {
+      card.classList.remove("pending-action");
+      isAnimating = false;
+    },
+  );
 }
 
-// ===== Habit: delete =====
+// ===== Habit: delete (with undo window) =====
 async function deleteHabit(habitId, card) {
   if (isAnimating) return;
+  isAnimating = true;
 
   playSound(sounds.taskDeleted);
-  card.classList.add("fade-out");
+  card.classList.add("pending-action");
 
-  await sleep(300);
+  showUndoToast(
+    "Habit deleted",
+    async () => {
+      card.classList.remove("pending-action");
+      card.classList.add("fade-out");
+      await sleep(300);
 
-  if (api.deleteHabit(habitId)) {
-    card.remove();
-    if (taskListEl.children.length === 0) {
-      taskListEl.innerHTML =
-        '<div class="empty-state">No tasks. Add one above.</div>';
-    }
-    maybeSideJimbo("delete");
-  } else {
-    loadTasks();
-  }
+      if (api.deleteHabit(habitId)) {
+        card.remove();
+        if (taskListEl.children.length === 0) {
+          taskListEl.innerHTML =
+            '<div class="empty-state">No tasks. Add one above.</div>';
+        }
+        maybeSideJimbo("delete");
+      } else {
+        loadTasks();
+      }
+      isAnimating = false;
+    },
+    () => {
+      card.classList.remove("pending-action");
+      isAnimating = false;
+    },
+  );
 }
 
 // ===== Animate counter up =====
@@ -819,6 +945,51 @@ function onDrop(e) {
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
+
+// ===== Undo toast =====
+const UNDO_WINDOW_MS = 3000;
+let pendingTimer = null;
+let pendingCommit = null;
+let pendingRestore = null;
+let hideToastTimer = null;
+
+function showUndoToast(message, commitFn, restoreFn) {
+  undoToastMessage.textContent = message;
+  clearTimeout(hideToastTimer);
+  undoToast.classList.remove("hidden");
+  void undoToast.offsetWidth;
+  undoToast.classList.add("visible");
+
+  pendingCommit = commitFn;
+  pendingRestore = restoreFn;
+
+  pendingTimer = setTimeout(() => {
+    const fn = pendingCommit;
+    pendingTimer = null;
+    pendingCommit = null;
+    pendingRestore = null;
+    hideUndoToast();
+    if (fn) fn();
+  }, UNDO_WINDOW_MS);
+}
+
+function hideUndoToast() {
+  undoToast.classList.remove("visible");
+  hideToastTimer = setTimeout(() => {
+    undoToast.classList.add("hidden");
+  }, 350);
+}
+
+undoToastBtn.addEventListener("click", () => {
+  if (!pendingTimer) return;
+  clearTimeout(pendingTimer);
+  const fn = pendingRestore;
+  pendingTimer = null;
+  pendingCommit = null;
+  pendingRestore = null;
+  hideUndoToast();
+  if (fn) fn();
+});
 
 // ===== Jimbo =====
 const voiceSounds = [];

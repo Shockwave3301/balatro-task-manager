@@ -1,4 +1,12 @@
 /* ===== Reset & Base ===== */
+@font-face {
+  font-family: "VCROSDMono";
+  src: url("assets/VCROSDMono-Regular.ttf") format("truetype");
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
 *, *::before, *::after {
   box-sizing: border-box;
   margin: 0;
@@ -6,7 +14,7 @@
 }
 
 body {
-  font-family: "Segoe UI", system-ui, sans-serif;
+  font-family: "VCROSDMono", "Segoe UI", system-ui, sans-serif;
   color: #e8e8e8;
   min-height: 100vh;
   overflow-x: hidden;
@@ -80,7 +88,7 @@ body {
   border-radius: 10px;
   background: rgba(22, 33, 62, 0.8);
   color: #a0a0b0;
-  font-family: "Pixelify Sans", cursive;
+  font-family: "VCROSDMono", monospace;
   font-size: 13px;
   font-weight: 700;
   cursor: pointer;
@@ -128,7 +136,7 @@ body {
 }
 
 .chip-counter-label {
-  font-family: "Pixelify Sans", cursive;
+  font-family: "VCROSDMono", monospace;
   font-size: 14px;
   color: #a0a0b0;
   text-transform: uppercase;
@@ -144,7 +152,7 @@ body {
 }
 
 .chip-counter-value {
-  font-family: "Pixelify Sans", cursive;
+  font-family: "VCROSDMono", monospace;
   font-size: 56px;
   font-weight: 700;
   color: #f0c040;
@@ -153,7 +161,7 @@ body {
 }
 
 .multiplier-badge {
-  font-family: "Pixelify Sans", cursive;
+  font-family: "VCROSDMono", monospace;
   font-size: 22px;
   font-weight: 700;
   color: #ff6b6b;
@@ -175,7 +183,7 @@ body {
 }
 
 .cashout-btn {
-  font-family: "Pixelify Sans", cursive;
+  font-family: "VCROSDMono", monospace;
   font-size: 16px;
   font-weight: 700;
   padding: 12px 28px;
@@ -221,14 +229,14 @@ body {
   border-radius: 10px;
   background: #0f3460;
   color: #e8e8e8;
-  font-family: "Pixelify Sans", cursive;
+  font-family: "VCROSDMono", monospace;
   font-size: 15px;
   outline: none;
   transition: border-color 0.2s;
 }
 
 #task-input::placeholder {
-  font-family: "Pixelify Sans", cursive;
+  font-family: "VCROSDMono", monospace;
   color: #6a6a80;
 }
 
@@ -298,7 +306,35 @@ body {
   padding: 14px 16px;
   border-radius: 12px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
-  transition: transform 0.2s, opacity 0.3s, background 0.2s;
+  transition: transform 0.2s, opacity 0.3s, background 0.2s, filter 0.2s;
+}
+
+.task-card.pending-action {
+  opacity: 0.4;
+  filter: grayscale(0.7);
+  pointer-events: none;
+}
+
+.task-title-input {
+  flex: 1;
+  font-family: "VCROSDMono", monospace;
+  font-size: 15px;
+  line-height: 1.4;
+  padding: 6px 10px;
+  background: #0f3460;
+  border: 1px solid rgba(240, 192, 64, 0.4);
+  border-radius: 8px;
+  color: #e8e8e8;
+  outline: none;
+  min-width: 0;
+}
+
+.task-title-input:focus {
+  border-color: rgba(240, 192, 64, 0.7);
+}
+
+.task-title {
+  cursor: text;
 }
 
 .task-card.dragging {
@@ -325,7 +361,7 @@ body {
 
 .task-title {
   flex: 1;
-  font-family: "Pixelify Sans", cursive;
+  font-family: "VCROSDMono", monospace;
   font-size: 15px;
   line-height: 1.4;
   word-break: break-word;
@@ -394,7 +430,7 @@ body {
 }
 
 .streak-badge {
-  font-family: "Pixelify Sans", cursive;
+  font-family: "VCROSDMono", monospace;
   font-size: 13px;
   font-weight: 700;
   color: #f0c040;
@@ -411,7 +447,7 @@ body {
 }
 
 .habit-reward-label {
-  font-family: "Pixelify Sans", cursive;
+  font-family: "VCROSDMono", monospace;
   font-size: 12px;
   color: #a0a0b0;
   white-space: nowrap;
@@ -424,7 +460,7 @@ body {
   padding: 48px 20px;
   color: #6a6a80;
   font-size: 16px;
-  font-family: "Pixelify Sans", cursive;
+  font-family: "VCROSDMono", monospace;
 }
 
 /* ===== Animations ===== */
@@ -514,7 +550,7 @@ body {
 .jimbo-side-bubble {
   background: #fff;
   color: #1a1a2e;
-  font-family: "Pixelify Sans", cursive;
+  font-family: "VCROSDMono", monospace;
   font-size: 14px;
   font-weight: 700;
   padding: 12px 16px;
@@ -579,7 +615,7 @@ body {
 .jimbo-dialogue {
   background: #fff;
   color: #1a1a2e;
-  font-family: "Pixelify Sans", cursive;
+  font-family: "VCROSDMono", monospace;
   font-size: 18px;
   font-weight: 700;
   padding: 20px 28px;
@@ -624,6 +660,60 @@ body {
 @keyframes jimbo-pulse {
   0%, 100% { scale: 1; }
   50% { scale: 1.06; }
+}
+
+/* ===== Undo Toast ===== */
+.undo-toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  z-index: 95;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  background: #16213e;
+  padding: 10px 14px 10px 18px;
+  border-radius: 12px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(240, 192, 64, 0.2);
+  font-family: "VCROSDMono", monospace;
+  color: #e8e8e8;
+  transform: translate(-50%, 140%);
+  opacity: 0;
+  transition: transform 0.35s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.25s;
+}
+
+.undo-toast.visible {
+  transform: translate(-50%, 0);
+  opacity: 1;
+}
+
+.undo-toast.hidden {
+  display: none;
+}
+
+.undo-toast-message {
+  font-size: 14px;
+}
+
+.undo-toast-btn {
+  font-family: "VCROSDMono", monospace;
+  font-size: 13px;
+  font-weight: 700;
+  padding: 6px 14px;
+  border: none;
+  border-radius: 8px;
+  background: #f0c040;
+  color: #1a1a2e;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s;
+}
+
+.undo-toast-btn:hover {
+  background: #ffd15a;
+}
+
+.undo-toast-btn:active {
+  transform: scale(0.95);
 }
 
 /* ===== Interaction lock during cashout ===== */
