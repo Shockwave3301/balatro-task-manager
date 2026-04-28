@@ -363,11 +363,11 @@ const HABIT_REWARDS = {
 };
 
 function habitReward(chips, streak) {
-  if (streak <= 1) return 0;
+  if (streak < 1) return 0;
   const r = HABIT_REWARDS[chips];
   if (streak === 61) return r.milestone;
   if (streak > 61) return 100;
-  return Math.min(100 + (streak - 2) * r.increment, r.ceiling);
+  return Math.min(100 + (streak - 1) * r.increment, r.ceiling);
 }
 
 // ===== Chip difficulty button (cycles on click) =====
@@ -467,7 +467,7 @@ function renderList(tasks, habits, listOrder) {
       const r = HABIT_REWARDS[item.chips];
       const ceiling = item.streak > 61 ? 100 : r.ceiling;
       const rewardLabel =
-        item.streak <= 1 ? "0/" + r.ceiling : reward + "/" + ceiling;
+        item.streak < 1 ? "0/" + r.ceiling : reward + "/" + ceiling;
       const streakLabel = isNegative
         ? `${item.streak}d clean`
         : `${item.streak}d`;
@@ -827,11 +827,7 @@ async function checkHabit(habitId, chips, card) {
       streakBadge.textContent = `${data.habit.streak}d`;
       streakBadge.classList.remove("no-streak");
 
-      if (data.earned === 0 && data.habit.streak <= 1) {
-        showSideJimbo(
-          "No chips on day one, pal. Gotta prove you can stick with it first.",
-        );
-      } else if (data.milestone) {
+      if (data.milestone) {
         showSideJimbo(
           "60 days! That's a real habit now. Here's a fat bonus — you earned it. From here on, it's just maintenance chips.",
         );
