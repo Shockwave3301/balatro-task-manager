@@ -348,11 +348,12 @@ body {
 
 .drag-handle {
   cursor: grab;
-  color: #4a4a60;
-  font-size: 18px;
+  width: 34px;
+  height: 34px;
+  flex-shrink: 0;
   user-select: none;
-  padding: 0 4px;
-  line-height: 1;
+  -webkit-user-drag: none;
+  display: block;
 }
 
 .drag-handle:active {
@@ -416,10 +417,6 @@ body {
 }
 
 /* ===== Habit Cards ===== */
-.task-card.habit-card {
-  border-left: 3px solid #e05555;
-}
-
 .task-card.habit-card.checked-today {
   opacity: 0.5;
 }
@@ -427,6 +424,42 @@ body {
 .task-card.habit-card.checked-today .complete-btn {
   opacity: 0.3;
   pointer-events: none;
+}
+
+/* Negative habit cards */
+.task-card.negative-habit-card .streak-badge {
+  color: #d8a0c0;
+  background: rgba(176, 48, 96, 0.15);
+}
+
+.task-card.negative-habit-card .streak-badge.no-streak {
+  color: #6a6a80;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.task-btn.slip-btn {
+  background: rgba(176, 48, 96, 0.18);
+}
+
+.task-btn.slip-btn:hover {
+  background: rgba(176, 48, 96, 0.35);
+}
+
+.slip-glyph {
+  font-family: "VCROSDMono", monospace;
+  font-size: 22px;
+  font-weight: 700;
+  color: #ff5577;
+  line-height: 1;
+}
+
+.task-card.negative-habit-card.slipping {
+  animation: slip-flash 400ms ease-out;
+}
+
+@keyframes slip-flash {
+  0% { box-shadow: 0 0 0 2px rgba(255, 85, 119, 0.7), 0 2px 8px rgba(0, 0, 0, 0.25); }
+  100% { box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25); }
 }
 
 .streak-badge {

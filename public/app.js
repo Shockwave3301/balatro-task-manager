@@ -1,7 +1,7 @@
 // ===== Local storage layer (replaces server.js) =====
 const STORAGE_KEY = "chipTodoDb";
 
-const MULT_BONUS = { 200: 0.1, 500: 0.3, 1000: 0.5 };
+const MULT_BONUS = { 200: 0.1, 500: 0.2, 1000: 0.3 };
 
 function todayStr() {
   return new Date().toISOString().slice(0, 10);
@@ -11,6 +11,18 @@ function yesterdayStr() {
   const d = new Date();
   d.setDate(d.getDate() - 1);
   return d.toISOString().slice(0, 10);
+}
+
+function tomorrowStr() {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
+function daysBetween(fromStr, toStr) {
+  const from = new Date(fromStr + "T00:00:00Z");
+  const to = new Date(toStr + "T00:00:00Z");
+  return Math.round((to - from) / 86400000);
 }
 
 function uuid() {
@@ -41,22 +53,70 @@ function readDb() {
   db = JSON.parse(raw);
   if (!db.habits) db.habits = [];
   if (!db.listOrder) db.listOrder = [];
+  if (db.curseUntil === undefined) db.curseUntil = null;
   if (!db.multiplier || db.multiplier.date !== todayStr()) {
     db.multiplier = { value: 1, date: todayStr() };
   }
-  // Reset streaks and apply penalties for missed habits
   const yest = yesterdayStr();
   const t = todayStr();
   let changed = false;
+
+  // Backfill type for existing habits
   for (const h of db.habits) {
-    if (h.lastChecked && h.lastChecked !== t && h.lastChecked !== yest && h.streak > 0) {
+    if (!h.type) {
+      h.type = "positive";
+      changed = true;
+    }
+  }
+
+  // Positive habits: reset streak and penalize missed days
+  for (const h of db.habits) {
+    if (h.type !== "positive") continue;
+    if (
+      h.lastChecked &&
+      h.lastChecked !== t &&
+      h.lastChecked !== yest &&
+      h.streak > 0
+    ) {
       h.streak = 0;
       db.chipBalance -= h.chips;
       changed = true;
     }
   }
+
+  // Negative habits: auto-credit each clean day since lastChecked
+  for (const h of db.habits) {
+    if (h.type !== "negative") continue;
+    const start = h.lastChecked || h.createdDate;
+    if (!start) continue;
+    let elapsed = daysBetween(start, t);
+    if (elapsed <= 0) continue;
+    if (elapsed > 365) elapsed = 365; // sanity cap
+    let earnedAny = false;
+    for (let i = 0; i < elapsed; i++) {
+      h.streak += 1;
+      const reward = habitReward(h.chips, h.streak);
+      if (reward > 0) {
+        db.chipBalance += reward;
+        db.earnings.push({ chips: reward, date: t });
+        earnedAny = true;
+      }
+    }
+    h.lastChecked = t;
+    // Bump multiplier once for today's tick — only if any reward landed and not cursed
+    if (earnedAny && !isCursed(db, t)) {
+      db.multiplier.value =
+        Math.round((db.multiplier.value + MULT_BONUS[h.chips]) * 10) / 10;
+    }
+    changed = true;
+  }
+
   if (changed) writeDb(db);
   return db;
+}
+
+function isCursed(db, dateStr) {
+  return db.curseUntil && dateStr <= db.curseUntil;
 }
 
 function writeDb(data) {
@@ -90,11 +150,18 @@ const api = {
     db.listOrder = db.listOrder.filter((x) => x !== task.id);
     const earned = Math.round(task.chips * db.multiplier.value);
     db.chipBalance += earned;
-    db.multiplier.value =
-      Math.round((db.multiplier.value + MULT_BONUS[task.chips]) * 10) / 10;
+    if (!isCursed(db, todayStr())) {
+      db.multiplier.value =
+        Math.round((db.multiplier.value + MULT_BONUS[task.chips]) * 10) / 10;
+    }
     db.earnings.push({ chips: earned, date: todayStr() });
     writeDb(db);
-    return { task, earned, chipBalance: db.chipBalance, multiplier: db.multiplier.value };
+    return {
+      task,
+      earned,
+      chipBalance: db.chipBalance,
+      multiplier: db.multiplier.value,
+    };
   },
   deleteTask(id) {
     const db = readDb();
@@ -126,12 +193,13 @@ const api = {
     db.listOrder = listOrder;
     writeDb(db);
   },
-  createHabit(title, chips) {
+  createHabit(title, chips, type = "positive") {
     const db = readDb();
     const habit = {
       id: uuid(),
       title: title.trim().slice(0, 200),
       chips,
+      type,
       streak: 0,
       lastChecked: null,
       createdDate: todayStr(),
@@ -144,7 +212,7 @@ const api = {
   checkHabit(id) {
     const db = readDb();
     const habit = db.habits.find((h) => h.id === id);
-    if (!habit) return null;
+    if (!habit || habit.type !== "positive") return null;
     const t = todayStr();
     if (habit.lastChecked === t) return null;
     const yest = yesterdayStr();
@@ -155,12 +223,43 @@ const api = {
     const milestone = habit.streak === 61;
     if (earned > 0) {
       db.chipBalance += earned;
-      db.multiplier.value =
-        Math.round((db.multiplier.value + MULT_BONUS[habit.chips]) * 10) / 10;
+      if (!isCursed(db, t)) {
+        db.multiplier.value =
+          Math.round((db.multiplier.value + MULT_BONUS[habit.chips]) * 10) / 10;
+      }
       db.earnings.push({ chips: earned, date: t });
     }
     writeDb(db);
-    return { habit, earned, milestone, chipBalance: db.chipBalance, multiplier: db.multiplier.value };
+    return {
+      habit,
+      earned,
+      milestone,
+      chipBalance: db.chipBalance,
+      multiplier: db.multiplier.value,
+    };
+  },
+  slipHabit(id) {
+    const db = readDb();
+    const habit = db.habits.find((h) => h.id === id);
+    if (!habit || habit.type !== "negative") return null;
+    const cappedStreak = Math.min(habit.streak, 60);
+    const penalty = Math.round(
+      (habit.chips * cappedStreak * cappedStreak) / 30,
+    );
+    const priorStreak = habit.streak;
+    habit.streak = 0;
+    habit.lastChecked = todayStr();
+    db.chipBalance -= penalty;
+    db.curseUntil = tomorrowStr();
+    writeDb(db);
+    return {
+      habit,
+      penalty,
+      priorStreak,
+      chipBalance: db.chipBalance,
+      multiplier: db.multiplier.value,
+      curseUntil: db.curseUntil,
+    };
   },
   deleteHabit(id) {
     const db = readDb();
@@ -190,7 +289,11 @@ const api = {
   cashout() {
     const db = readDb();
     if (db.chipBalance === 0) return null;
-    const cashout = { id: uuid(), amount: db.chipBalance, date: new Date().toISOString() };
+    const cashout = {
+      id: uuid(),
+      amount: db.chipBalance,
+      date: new Date().toISOString(),
+    };
     db.cashouts.push(cashout);
     db.chipBalance = 0;
     writeDb(db);
@@ -241,7 +344,9 @@ let currentChipBalance = 0;
 let currentMultiplier = 1;
 let selectedChips = 200;
 let isAnimating = false;
-let isHabitMode = false;
+// Mode: "task" → "habit-positive" → "habit-negative"
+const MODES = ["task", "habit-positive", "habit-negative"];
+let modeIndex = 0;
 
 // ===== Chip images map =====
 const chipImages = {
@@ -252,8 +357,8 @@ const chipImages = {
 
 // ===== Habit reward curve =====
 const HABIT_REWARDS = {
-  200:  { increment: 50,  ceiling: 200,  milestone: 1500 },
-  500:  { increment: 100, ceiling: 500,  milestone: 2500 },
+  200: { increment: 50, ceiling: 200, milestone: 1500 },
+  500: { increment: 100, ceiling: 500, milestone: 2500 },
   1000: { increment: 150, ceiling: 1000, milestone: 5000 },
 };
 
@@ -274,14 +379,34 @@ chipDifficultyBtn.addEventListener("click", () => {
   playSound(sounds.buttonPressed);
 });
 
-// ===== Mode toggle (task / habit) =====
+// ===== Mode toggle (task / habit-positive / habit-negative) =====
+function applyMode() {
+  const mode = MODES[modeIndex];
+  if (mode === "task") {
+    modeIcon.src = "assets/task.png";
+    modeIcon.alt = "Task";
+    taskInput.placeholder = "New task...";
+    modeToggle.classList.remove("negative-mode");
+  } else if (mode === "habit-positive") {
+    modeIcon.src = "assets/habit.png";
+    modeIcon.alt = "Habit";
+    taskInput.placeholder = "New habit...";
+    modeToggle.classList.remove("negative-mode");
+  } else {
+    modeIcon.src = "assets/negative_habit.png";
+    modeIcon.alt = "Negative habit";
+    taskInput.placeholder = "New habit to avoid...";
+    modeToggle.classList.add("negative-mode");
+  }
+}
+
 modeToggle.addEventListener("click", () => {
-  isHabitMode = !isHabitMode;
-  modeIcon.src = isHabitMode ? "assets/habit.png" : "assets/task.png";
-  modeIcon.alt = isHabitMode ? "Habit" : "Task";
-  taskInput.placeholder = isHabitMode ? "New habit..." : "New task...";
+  modeIndex = (modeIndex + 1) % MODES.length;
+  applyMode();
   playSound(sounds.buttonPressed);
 });
+
+applyMode();
 
 // ===== Load and render =====
 function loadTasks() {
@@ -330,24 +455,40 @@ function renderList(tasks, habits, listOrder) {
     card.draggable = true;
 
     if (item._type === "habit") {
+      const isNegative = item.type === "negative";
       const checkedToday = item.lastChecked === todayStrVal;
-      card.className =
-        "task-card habit-card" + (checkedToday ? " checked-today" : "");
+      const cardClasses = ["task-card", "habit-card"];
+      if (isNegative) cardClasses.push("negative-habit-card");
+      else if (checkedToday) cardClasses.push("checked-today");
+      card.className = cardClasses.join(" ");
 
       const streakClass = item.streak > 0 ? "" : " no-streak";
       const reward = habitReward(item.chips, item.streak);
       const r = HABIT_REWARDS[item.chips];
       const ceiling = item.streak > 61 ? 100 : r.ceiling;
-      const rewardLabel = item.streak <= 1 ? "0/" + r.ceiling : reward + "/" + ceiling;
+      const rewardLabel =
+        item.streak <= 1 ? "0/" + r.ceiling : reward + "/" + ceiling;
+      const streakLabel = isNegative
+        ? `${item.streak}d clean`
+        : `${item.streak}d`;
+
+      const actionBtn = isNegative
+        ? `<button class="task-btn slip-btn" title="I slipped"><span class="slip-glyph">✕</span></button>`
+        : `<button class="task-btn complete-btn" title="${checkedToday ? "Done today" : "Check off"}"><img src="assets/complete.png" alt="Complete" class="btn-icon"></button>`;
+
+      const typeIcon = isNegative
+        ? `<img class="drag-handle" src="assets/negative_habit.png" alt="Negative habit" title="Negative habit — auto-ticks each clean day">`
+        : `<img class="drag-handle" src="assets/habit.png" alt="Habit" title="Habit — check off daily">`;
+
       card.innerHTML = `
-        <span class="drag-handle">⠿</span>
+        ${typeIcon}
         <button class="task-chip-badge" data-chips="${item.chips}" title="Click to cycle chip value">
           <img src="${chipImages[item.chips]}" alt="${item.chips}" class="chip-icon">
         </button>
         <span class="task-title">${escapeHtml(item.title)}</span>
         <span class="habit-reward-label">${rewardLabel}</span>
-        <span class="streak-badge${streakClass}">${item.streak}d</span>
-        <button class="task-btn complete-btn" title="${checkedToday ? "Done today" : "Check off"}"><img src="assets/complete.png" alt="Complete" class="btn-icon"></button>
+        <span class="streak-badge${streakClass}">${streakLabel}</span>
+        ${actionBtn}
         <button class="task-btn delete-btn" title="Delete"><img src="assets/delete.png" alt="Delete" class="btn-icon"></button>
       `;
 
@@ -360,7 +501,11 @@ function renderList(tasks, habits, listOrder) {
         startEditTitle(item, card);
       });
 
-      if (!checkedToday) {
+      if (isNegative) {
+        card.querySelector(".slip-btn").addEventListener("click", () => {
+          slipHabit(item.id, item.chips, card);
+        });
+      } else if (!checkedToday) {
         card.querySelector(".complete-btn").addEventListener("click", () => {
           checkHabit(item.id, item.chips, card);
         });
@@ -373,7 +518,7 @@ function renderList(tasks, habits, listOrder) {
       card.className = "task-card";
 
       card.innerHTML = `
-        <span class="drag-handle">⠿</span>
+        <img class="drag-handle" src="assets/task.png" alt="Task" title="Task — complete once for chips">
         <button class="task-chip-badge" data-chips="${item.chips}" title="Click to cycle chip value">
           <img src="${chipImages[item.chips]}" alt="${item.chips}" class="chip-icon">
         </button>
@@ -486,7 +631,11 @@ function addTask() {
   if (!title) return;
 
   playSound(sounds.buttonPressed);
-  if (isHabitMode) api.createHabit(title, selectedChips);
+  const mode = MODES[modeIndex];
+  if (mode === "habit-positive")
+    api.createHabit(title, selectedChips, "positive");
+  else if (mode === "habit-negative")
+    api.createHabit(title, selectedChips, "negative");
   else api.createTask(title, selectedChips);
 
   taskInput.value = "";
@@ -561,8 +710,10 @@ async function completeTask(taskId, chips, card) {
       else if (chips === 1000) playSound(sounds.chipsAdded1000);
 
       await sleep(20);
-      flyingChip.style.left = counterRect.left + counterRect.width / 2 - 20 + "px";
-      flyingChip.style.top = counterRect.top + counterRect.height / 2 - 20 + "px";
+      flyingChip.style.left =
+        counterRect.left + counterRect.width / 2 - 20 + "px";
+      flyingChip.style.top =
+        counterRect.top + counterRect.height / 2 - 20 + "px";
 
       await sleep(600);
       flyingChip.classList.add("landed");
@@ -694,7 +845,8 @@ async function checkHabit(habitId, chips, card) {
         const flyingChip = document.createElement("img");
         flyingChip.src = chipImages[chips];
         flyingChip.className = "flying-chip";
-        flyingChip.style.left = badgeRect.left + badgeRect.width / 2 - 20 + "px";
+        flyingChip.style.left =
+          badgeRect.left + badgeRect.width / 2 - 20 + "px";
         flyingChip.style.top = badgeRect.top + badgeRect.height / 2 - 20 + "px";
         document.body.appendChild(flyingChip);
 
@@ -705,7 +857,8 @@ async function checkHabit(habitId, chips, card) {
         await sleep(20);
         flyingChip.style.left =
           counterRect.left + counterRect.width / 2 - 20 + "px";
-        flyingChip.style.top = counterRect.top + counterRect.height / 2 - 20 + "px";
+        flyingChip.style.top =
+          counterRect.top + counterRect.height / 2 - 20 + "px";
 
         await sleep(600);
         flyingChip.classList.add("landed");
@@ -724,6 +877,71 @@ async function checkHabit(habitId, chips, card) {
 
       isAnimating = false;
       maybeSideJimbo("complete");
+    },
+    () => {
+      card.classList.remove("pending-action");
+      isAnimating = false;
+    },
+  );
+}
+
+// ===== Habit: slip (negative habit confess) =====
+async function slipHabit(habitId, chips, card) {
+  if (isAnimating) return;
+  isAnimating = true;
+
+  playSound(sounds.taskDeleted);
+  card.classList.add("pending-action");
+
+  showUndoToast(
+    "Slip recorded",
+    async () => {
+      card.classList.remove("pending-action");
+
+      const data = api.slipHabit(habitId);
+      if (!data) {
+        isAnimating = false;
+        loadTasks();
+        return;
+      }
+
+      // Animate counter down
+      card.classList.add("slipping");
+      void card.offsetWidth;
+      chipCounterBox.classList.remove("shake-strong");
+      void chipCounterBox.offsetWidth;
+      chipCounterBox.classList.add("shake-strong");
+      setTimeout(() => chipCounterBox.classList.remove("shake-strong"), 400);
+
+      await animateCounterUp(currentChipBalance, data.chipBalance);
+      currentChipBalance = data.chipBalance;
+      currentMultiplier = data.multiplier;
+      cashoutBtn.disabled = currentChipBalance === 0;
+      multiplierBadge.textContent = `x ${currentMultiplier.toFixed(1)}`;
+
+      // Reset card visuals
+      const streakBadge = card.querySelector(".streak-badge");
+      streakBadge.textContent = `0d clean`;
+      streakBadge.classList.add("no-streak");
+      const r = HABIT_REWARDS[chips];
+      card.querySelector(".habit-reward-label").textContent = "0/" + r.ceiling;
+      card.classList.remove("slipping");
+
+      if (data.priorStreak >= 7) {
+        showSideJimbo(
+          `Oof. ${data.priorStreak} clean days, gone. Down ${data.penalty.toLocaleString()} chips and a curse on tomorrow's mult. Hurts, doesn't it?`,
+        );
+      } else if (data.penalty > 0) {
+        showSideJimbo(
+          `That's ${data.penalty.toLocaleString()} chips out the window. And no mult tomorrow. Try again.`,
+        );
+      } else {
+        showSideJimbo(
+          "Caught yourself early. No chips lost — but tomorrow's mult is locked. Don't make a habit of slipping.",
+        );
+      }
+
+      isAnimating = false;
     },
     () => {
       card.classList.remove("pending-action");
@@ -1210,26 +1428,24 @@ debugJimboBtn.addEventListener("click", () => {
 });
 
 // ===== Task help button =====
-document
-  .getElementById("task-help-btn")
-  .addEventListener("click", async () => {
-    playSound(sounds.buttonPressed);
-    await showSideJimbo(
-      "Create tasks, assign them a chip value — blue is easy, red is medium, gold is hard. " +
-        "Complete a task and the chips are yours.",
-    );
-    await sleep(1000);
-    await showSideJimbo(
-      "Every task you finish today bumps your multiplier. " +
-        "Easy gives +0.1, medium +0.3, hard +0.5. " +
-        "Multiplier resets at midnight, so stack 'em up while you can.",
-    );
-    await sleep(1000);
-    await showSideJimbo(
-      "When you're ready, hit Cash Out to bank your chips. " +
-        "That's when I show up with something to say. Don't keep me waiting.",
-    );
-  });
+document.getElementById("task-help-btn").addEventListener("click", async () => {
+  playSound(sounds.buttonPressed);
+  await showSideJimbo(
+    "Create tasks, assign them a chip value — blue is easy, red is medium, gold is hard. " +
+      "Complete a task and the chips are yours.",
+  );
+  await sleep(1000);
+  await showSideJimbo(
+    "Every task you finish today bumps your multiplier. " +
+      "Easy gives +0.1, medium +0.2, hard +0.3. " +
+      "Multiplier resets at midnight, so stack 'em up while you can.",
+  );
+  await sleep(1000);
+  await showSideJimbo(
+    "When you're ready, hit Cash Out to bank your chips. " +
+      "That's when I show up with something to say. Don't keep me waiting.",
+  );
+});
 
 // ===== Habit help button =====
 document
@@ -1247,6 +1463,33 @@ document
     await showSideJimbo(
       "Oh, and habits increase your multiplier, but are not affected by it! " +
         "So it's a solid strategy to get them out of your way first to get that mult for the rest of the day!",
+    );
+  });
+
+// ===== Negative habit help button =====
+document
+  .getElementById("neg-habit-help-btn")
+  .addEventListener("click", async () => {
+    playSound(sounds.buttonPressed);
+    await showSideJimbo(
+      "Negative habits are the 'don't do X' kind. Toggle the mode button twice to get there. " +
+        "You don't check them off — they tick by themselves every clean day. " +
+        "Same reward curve as regular habits: chips per day grow with the streak, cap at the chip tier, " +
+        "and you get a fat 60-day milestone bonus.",
+    );
+    await sleep(1000);
+    await showSideJimbo(
+      "But if you slip, you press the red ✕ and confess. " +
+        "The penalty scales hard with how long you'd been clean — " +
+        "roughly chips × streak² ÷ 30, capped at 60 days. " +
+        "A 30-day slip on a 500-chip habit costs you 15,000. A 60-day slip costs 60,000. " +
+        "The longer the streak, the more it stings. That's the point.",
+    );
+    await sleep(1000);
+    await showSideJimbo(
+      "Plus the loser's curse: slip and you get no multiplier gains for the rest of today and all of tomorrow. " +
+        "Tasks and habits still pay chips, but your mult is frozen. " +
+        "So don't slip. Or if you do — at least don't slip on a Friday.",
     );
   });
 
